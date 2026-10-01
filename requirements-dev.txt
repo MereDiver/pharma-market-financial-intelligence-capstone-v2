@@ -1,0 +1,5 @@
+pytest>=8.2,<9
+requests>=2.32,<3
+psycopg2-binary>=2.9,<3
+databricks-sdk>=0.81,<1
+fastmcp>=2.10,<3

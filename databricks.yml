@@ -1,0 +1,167 @@
+bundle:
+  name: pharma-market-financial-intelligence
+
+variables:
+  catalog:
+    description: Existing Unity Catalog catalog
+    default: workspace
+  schema:
+    description: Capstone analytical schema
+    default: pharma_market_intelligence
+  volume:
+    description: Existing or capstone-managed volume name
+    default: pharma_pipeline
+  medicaid_states:
+    description: ALL for national bulk ingestion, or comma-separated two-letter codes
+    default: ALL
+  medicaid_years:
+    description: Comparison years
+    default: 2024,2025
+  cms_mode:
+    description: api or bulk_csv
+    default: bulk_csv
+  lakebase_endpoint_name:
+    description: Existing Lakebase endpoint full resource name; set outside Git
+    default: ""
+resources:
+  pipelines:
+    pharma_activity_analytics:
+      name: pharma-market-intelligence-activity-analytics
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      continuous: false
+      channel: CURRENT
+      configuration:
+        source_catalog: ${var.catalog}
+        source_schema: ${var.schema}
+      libraries:
+        - file:
+            path: ./pipeline/06_activity_analytics_dlt.py
+  jobs:
+    pharma_intelligence_pipeline:
+      name: pharma-market-financial-intelligence-pipeline
+      max_concurrent_runs: 1
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: medicaid_states
+          default: ${var.medicaid_states}
+        - name: medicaid_years
+          default: ${var.medicaid_years}
+        - name: cms_mode
+          default: ${var.cms_mode}
+        - name: max_openfda_products
+          default: "30"
+        - name: lakebase_endpoint_name
+          default: ${var.lakebase_endpoint_name}
+        - name: lakebase_database
+          default: databricks_postgres
+      tasks:
+        - task_key: ingest_medicaid_subset
+          disable_auto_optimization: true
+          max_retries: 0
+          retry_on_timeout: false
+          spark_python_task:
+            python_file: ./pipeline/01_ingest_medicaid.py
+            parameters: &pipeline_config
+              - --catalog
+              - '{{job.parameters.catalog}}'
+              - --schema
+              - ${var.schema}
+              - --volume
+              - ${var.volume}
+              - --medicaid-states
+              - '{{job.parameters.medicaid_states}}'
+              - --medicaid-years
+              - '{{job.parameters.medicaid_years}}'
+              - --cms-mode
+              - '{{job.parameters.cms_mode}}'
+              - --max-openfda-products
+              - '{{job.parameters.max_openfda_products}}'
+          environment_key: default
+        - task_key: transform_medicaid_silver
+          max_retries: 0
+          retry_on_timeout: false
+          depends_on:
+            - task_key: ingest_medicaid_subset
+          spark_python_task:
+            python_file: ./pipeline/02_transform_silver.py
+            parameters: *pipeline_config
+          environment_key: default
+        - task_key: build_gold_analytics
+          max_retries: 0
+          retry_on_timeout: false
+          depends_on:
+            - task_key: transform_medicaid_silver
+          spark_python_task:
+            python_file: ./pipeline/03_build_gold.py
+            parameters: *pipeline_config
+          environment_key: default
+        - task_key: enrich_top_products_openfda
+          max_retries: 0
+          retry_on_timeout: false
+          depends_on:
+            - task_key: build_gold_analytics
+          spark_python_task:
+            python_file: ./pipeline/04_enrich_openfda.py
+            parameters: &lakebase_config
+              - --catalog
+              - '{{job.parameters.catalog}}'
+              - --schema
+              - ${var.schema}
+              - --volume
+              - ${var.volume}
+              - --medicaid-states
+              - '{{job.parameters.medicaid_states}}'
+              - --medicaid-years
+              - '{{job.parameters.medicaid_years}}'
+              - --cms-mode
+              - '{{job.parameters.cms_mode}}'
+              - --max-openfda-products
+              - '{{job.parameters.max_openfda_products}}'
+              - --pg-database
+              - '{{job.parameters.lakebase_database}}'
+              - --pg-port
+              - "5432"
+              - --pg-sslmode
+              - require
+              - --endpoint-name
+              - '{{job.parameters.lakebase_endpoint_name}}'
+              - --app-schema
+              - pharma_intelligence
+          environment_key: default
+        - task_key: embed_drug_documents
+          max_retries: 0
+          retry_on_timeout: false
+          depends_on:
+            - task_key: enrich_top_products_openfda
+          spark_python_task:
+            python_file: ./pipeline/05_ingest_drug_embeddings.py
+            parameters: *lakebase_config
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - requests>=2.32,<3
+              - databricks-sdk>=0.81,<1
+              - psycopg2-binary>=2.9,<3
+              - sentence-transformers>=3.0,<4
+    pharma_activity_analytics_refresh:
+      name: pharma-market-intelligence-activity-analytics-refresh
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: refresh_cdf_activity_analytics
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.pharma_activity_analytics.id}
+            full_refresh: false
+targets:
+  dev:
+    mode: development
+    default: true
+  prod:
+    mode: production
+    workspace:
+      root_path: /Shared/.bundle/${bundle.name}/${bundle.target}
