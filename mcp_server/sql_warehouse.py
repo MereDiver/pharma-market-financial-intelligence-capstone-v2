@@ -49,8 +49,8 @@ def qualified_table(table_name: str) -> str:
     }
     if table_name not in allowed:
         raise ValueError("Unknown governed table alias.")
-    catalog = os.getenv("CATALOG", "workspace")
-    schema = os.getenv("SCHEMA", "pharma_market_intelligence")
+    catalog = os.getenv("CATALOG", "bootcamp_students")
+    schema = os.getenv("SCHEMA", "merediver")
     if not re_identifier(catalog) or not re_identifier(schema):
         raise SQLWarehouseError("CATALOG and SCHEMA must be valid identifiers.")
     return f"`{catalog}`.`{schema}`.`{allowed[table_name]}`"

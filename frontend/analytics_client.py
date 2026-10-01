@@ -22,7 +22,7 @@ def _table(name: str) -> str:
         "activity": "gold_agent_activity_daily",
         "workflow": "gold_workflow_changes_daily",
     }
-    catalog, schema = os.getenv("CATALOG", "workspace"), os.getenv("SCHEMA", "pharma_market_intelligence")
+    catalog, schema = os.getenv("CATALOG", "bootcamp_students"), os.getenv("SCHEMA", "merediver")
     if name not in allowed or not catalog.replace("_", "a").isalnum() or not schema.replace("_", "a").isalnum():
         raise ValueError("Invalid governed table configuration.")
     return f"`{catalog}`.`{schema}`.`{allowed[name]}`"

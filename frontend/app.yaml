@@ -17,8 +17,8 @@ env:
   - name: APP_SCHEMA
     value: pharma_intelligence
   - name: CATALOG
-    value: workspace
+    value: bootcamp_students
   - name: SCHEMA
-    value: pharma_market_intelligence
+    value: merediver
   - name: LOG_LEVEL
     value: INFO

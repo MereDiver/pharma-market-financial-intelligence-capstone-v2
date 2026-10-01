@@ -9,9 +9,9 @@ env:
   - name: APP_SCHEMA
     value: pharma_intelligence
   - name: CATALOG
-    value: workspace
+    value: bootcamp_students
   - name: SCHEMA
-    value: pharma_market_intelligence
+    value: merediver
   - name: EMBEDDING_MODEL_NAME
     value: sentence-transformers/all-MiniLM-L6-v2
   - name: CHUNK_SIZE

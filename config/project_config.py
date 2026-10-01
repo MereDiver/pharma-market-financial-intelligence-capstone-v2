@@ -95,8 +95,8 @@ def load_config() -> ProjectConfig:
     if chunk_size <= 0 or overlap < 0 or overlap >= chunk_size:
         raise ValueError("CHUNK_SIZE must be positive and CHUNK_OVERLAP smaller.")
     return ProjectConfig(
-        catalog=_identifier("CATALOG", "workspace"),
-        schema=_identifier("SCHEMA", "pharma_market_intelligence"),
+        catalog=_identifier("CATALOG", "bootcamp_students"),
+        schema=_identifier("SCHEMA", "merediver"),
         volume=_identifier("VOLUME", "pharma_pipeline"),
         states=_states(), years=years, cms_mode=mode, cms_page_size=page_size,
         cms_write_batch_size=write_batch_size,

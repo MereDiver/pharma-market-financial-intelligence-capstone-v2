@@ -5,13 +5,15 @@ Complete these steps in order. Replace example identifiers with your workspace v
 ## 1. Prepare the workspace
 
 1. Put this repository in a Databricks Git folder.
-2. Choose a Unity Catalog catalog with managed storage that supports Lakebase CDF.
-3. Choose the analytical schema, for example `pharma_market_intelligence`.
-4. Create the landing Volume or grant the job identity permission to create it:
+2. Use the bootcamp-provided Unity Catalog catalog `bootcamp_students`.
+3. Use the existing student schema `merediver`. The pipeline never creates a catalog; it only uses this existing catalog/schema and idempotently verifies the schema.
+4. The pipeline does not create a catalog, schema, or Volume. Verify the existing landing Volume:
 
 ```sql
-CREATE VOLUME IF NOT EXISTS YOUR_CATALOG.pharma_market_intelligence.pharma_pipeline;
+CREATE VOLUME IF NOT EXISTS bootcamp_students.merediver.pharma_pipeline;
 ```
+
+The command above is only needed if the Volume does not already exist. The ingestion job now performs read-only `DESCRIBE` checks and fails clearly if the existing schema or Volume is unavailable.
 
 5. Create or select a serverless SQL warehouse.
 6. Create or select a Lakebase project, branch, endpoint, and database.
@@ -22,7 +24,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
 8. Keep `MEDICAID_STATES=ALL` and `CMS_MODE=bulk_csv` for the final run.
-9. In `mcp_server/app.yaml` and `frontend/app.yaml`, replace the example `CATALOG` and `SCHEMA` values if yours differ.
+9. `mcp_server/app.yaml` and `frontend/app.yaml` are already configured with `CATALOG=bootcamp_students` and `SCHEMA=merediver`.
 
 ## 2. Configure the Lakebase endpoint
 
@@ -31,8 +33,8 @@ Copy the full resource name from the Lakebase endpoint page. Pass it at deploy t
 ```json
 {
   "lakebase_endpoint_name": "projects/PROJECT/branches/BRANCH/endpoints/ENDPOINT",
-  "catalog": "YOUR_CATALOG",
-  "schema": "pharma_market_intelligence"
+  "catalog": "bootcamp_students",
+  "schema": "merediver"
 }
 ```
 
@@ -61,16 +63,16 @@ When it completes, run:
 
 ```sql
 SELECT *
-FROM YOUR_CATALOG.pharma_market_intelligence.gold_data_quality_summary
+FROM bootcamp_students.merediver.gold_data_quality_summary
 ORDER BY refreshed_at DESC;
 
 SELECT year, COUNT(*) AS rows, COUNT(DISTINCT state) AS jurisdictions
-FROM YOUR_CATALOG.pharma_market_intelligence.silver_medicaid_utilization_clean
+FROM bootcamp_students.merediver.silver_medicaid_utilization_clean
 GROUP BY year
 ORDER BY year;
 
 SELECT match_status, has_label_document, COUNT(*) AS products
-FROM YOUR_CATALOG.pharma_market_intelligence.openfda_product_enrichment
+FROM bootcamp_students.merediver.openfda_product_enrichment
 GROUP BY match_status, has_label_document
 ORDER BY match_status, has_label_document;
 ```
@@ -174,7 +176,7 @@ ORDER BY created_at DESC;
 4. Open **Branch overview > Lakebase CDF**.
 5. Click **Start**.
 6. Choose the source database and `pharma_intelligence` schema.
-7. Choose the destination catalog and `pharma_market_intelligence` schema.
+7. Choose destination catalog `bootcamp_students` and destination schema `merediver`.
 8. Start the feed and wait for `Streaming` status.
 
 CDF creates `lb_<table_name>_history` tables. Empty tables are skipped until their first row exists, which is why the App workflow comes first.

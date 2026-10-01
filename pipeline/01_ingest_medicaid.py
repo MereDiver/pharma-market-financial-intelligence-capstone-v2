@@ -45,7 +45,13 @@ def main() -> None:
     configure_from_args()
     spark = SparkSession.builder.getOrCreate()
     cfg = load_config()
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{cfg.catalog}`.`{cfg.schema}`")
+    try:
+        spark.sql(f"DESCRIBE SCHEMA EXTENDED `{cfg.catalog}`.`{cfg.schema}`").collect()
+    except Exception as exc:
+        raise RuntimeError(
+            f"Required Unity Catalog schema is unavailable: {cfg.catalog}.{cfg.schema}. "
+            "Create it before running the pipeline or grant the job identity access."
+        ) from exc
     stage = f"{cfg.table_prefix}._bronze_medicaid_stage"
     bronze = f"{cfg.table_prefix}.bronze_raw_medicaid_utilization"
     schema = RAW_SCHEMA.add("source_year", T.IntegerType(), False).add("source_mode", T.StringType(), False).add("source_identifier", T.StringType(), False).add("source_url", T.StringType(), False)
@@ -73,9 +79,16 @@ def main() -> None:
             flush()
 
     if cfg.cms_mode == "bulk_csv":
-        spark.sql(
-            f"CREATE VOLUME IF NOT EXISTS `{cfg.catalog}`.`{cfg.schema}`.`{cfg.volume}`"
-        )
+        try:
+            spark.sql(
+                f"DESCRIBE VOLUME `{cfg.catalog}`.`{cfg.schema}`.`{cfg.volume}`"
+            ).collect()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Required Unity Catalog Volume is unavailable: "
+                f"{cfg.catalog}.{cfg.schema}.{cfg.volume}. "
+                "Create it before running the pipeline or grant the job identity access."
+            ) from exc
         download_dir = Path(f"/Volumes/{cfg.catalog}/{cfg.schema}/{cfg.volume}/cms")
         frames = []
         for year in cfg.years:

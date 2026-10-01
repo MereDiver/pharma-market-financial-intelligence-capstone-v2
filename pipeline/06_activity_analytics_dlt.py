@@ -18,8 +18,8 @@ def _configured_identifier(name: str, default: str) -> str:
     return value
 
 
-SOURCE_CATALOG = _configured_identifier("source_catalog", "workspace")
-SOURCE_SCHEMA = _configured_identifier("source_schema", "pharma_market_intelligence")
+SOURCE_CATALOG = _configured_identifier("source_catalog", "bootcamp_students")
+SOURCE_SCHEMA = _configured_identifier("source_schema", "merediver")
 
 
 def _source(table: str) -> str:

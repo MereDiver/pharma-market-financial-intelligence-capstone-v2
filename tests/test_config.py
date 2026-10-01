@@ -12,7 +12,8 @@ def test_national_performance_defaults(monkeypatch) -> None:
 
     config = load_config()
 
-    assert config.catalog == "workspace"
+    assert config.catalog == "bootcamp_students"
+    assert config.schema == "merediver"
     assert config.states == ()
     assert config.national_scope is True
     assert config.cms_mode == "bulk_csv"

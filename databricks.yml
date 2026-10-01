@@ -4,12 +4,12 @@ bundle:
 variables:
   catalog:
     description: Existing Unity Catalog catalog
-    default: workspace
+    default: bootcamp_students
   schema:
     description: Capstone analytical schema
-    default: pharma_market_intelligence
+    default: merediver
   volume:
-    description: Existing or capstone-managed volume name
+    description: Existing Volume in the bootcamp student schema
     default: pharma_pipeline
   medicaid_states:
     description: ALL for national bulk ingestion, or comma-separated two-letter codes

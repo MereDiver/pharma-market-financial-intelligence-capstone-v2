@@ -108,8 +108,8 @@ evidence/       Final screenshots and deployment evidence checklist
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `catalog` / `CATALOG` | `workspace` | Unity Catalog destination |
-| `schema` / `SCHEMA` | `pharma_market_intelligence` | Delta tables and CDF analytics |
+| `catalog` / `CATALOG` | `bootcamp_students` | Bootcamp-provided Unity Catalog catalog |
+| `schema` / `SCHEMA` | `merediver` | Existing student schema for Delta tables and CDF analytics |
 | `volume` / `VOLUME` | `pharma_pipeline` | Durable landing area for official bulk CSVs |
 | `MEDICAID_STATES` | `ALL` | National run; or two-letter diagnostic list |
 | `CMS_MODE` | `bulk_csv` | Required mode for national run |
