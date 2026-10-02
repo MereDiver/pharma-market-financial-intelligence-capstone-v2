@@ -35,6 +35,7 @@ def test_ask_agent_uses_responses_input_and_extracts_output_text(monkeypatch):
     )
     FakeWorkspaceClient.api_client = api_client
     monkeypatch.setenv("AGENT_ENDPOINT", "finance-supervisor")
+    monkeypatch.setenv("APPROVAL_SIGNING_KEY", "test-only-signing-key")
     monkeypatch.setattr(agent_client, "WorkspaceClient", FakeWorkspaceClient)
 
     result = agent_client.ask_agent("  Which products?  ")
@@ -45,7 +46,9 @@ def test_ask_agent_uses_responses_input_and_extracts_output_text(monkeypatch):
         {"input": [{"role": "user", "content": "Which products?"}]},
     )]
     assert result["answer"] == "California answer"
-    assert result["response_id"] == "resp-answer-1"
+    history = agent_client._decode_conversation(result["conversation_token"], "finance-supervisor")
+    assert history[0] == {"role": "user", "content": "Which products?"}
+    assert history[1]["type"] == "message"
 
 
 def test_ask_agent_continues_previous_response(monkeypatch):
@@ -55,19 +58,34 @@ def test_ask_agent_continues_previous_response(monkeypatch):
     })
     FakeWorkspaceClient.api_client = api_client
     monkeypatch.setenv("AGENT_ENDPOINT", "finance-supervisor")
+    monkeypatch.setenv("APPROVAL_SIGNING_KEY", "test-only-signing-key")
     monkeypatch.setattr(agent_client, "WorkspaceClient", FakeWorkspaceClient)
+    conversation_token = agent_client._encode_conversation(
+        "finance-supervisor",
+        [
+            {"role": "user", "content": "Which products drove reimbursement?"},
+            {"type": "message", "role": "assistant", "content": [
+                {"type": "output_text", "text": "NDC 000245915 was the largest driver."}
+            ]},
+        ],
+    )
 
-    result = agent_client.ask_agent("Give me its FDA context.", "resp-answer-1")
+    result = agent_client.ask_agent("Give me its FDA context.", conversation_token)
 
     assert api_client.calls == [(
         "POST",
         "/serving-endpoints/finance-supervisor/invocations",
         {
-            "input": [{"role": "user", "content": "Give me its FDA context."}],
-            "previous_response_id": "resp-answer-1",
+            "input": [
+                {"role": "user", "content": "Which products drove reimbursement?"},
+                {"type": "message", "role": "assistant", "content": [
+                    {"type": "output_text", "text": "NDC 000245915 was the largest driver."}
+                ]},
+                {"role": "user", "content": "Give me its FDA context."},
+            ],
         },
     )]
-    assert result["response_id"] == "resp-answer-2"
+    assert "conversation_token" in result
 
 
 def test_extract_answer_supports_top_level_output_text():
@@ -101,21 +119,20 @@ def test_ask_agent_approves_read_only_mcp_call_and_continues(monkeypatch):
     )
     FakeWorkspaceClient.api_client = api_client
     monkeypatch.setenv("AGENT_ENDPOINT", "finance-supervisor")
+    monkeypatch.setenv("APPROVAL_SIGNING_KEY", "test-only-signing-key")
     monkeypatch.setattr(agent_client, "WorkspaceClient", FakeWorkspaceClient)
 
     result = agent_client.ask_agent("Which products?")
 
     assert len(api_client.calls) == 2
-    assert api_client.calls[1][2] == {
-        "input": [{
+    assert api_client.calls[1][2]["input"][-1] == {
             "type": "mcp_approval_response",
             "approval_request_id": "tool-123",
             "approve": True,
-        }],
-        "previous_response_id": "resp-read-approval",
     }
+    assert api_client.calls[1][2]["input"][-2] == approval
     assert result["answer"] == "The final evidence-based answer."
-    assert result["response_id"] == "resp-read-final"
+    assert "conversation_token" in result
 
 
 def test_write_tool_requires_signed_approval_then_continues(monkeypatch):
@@ -144,14 +161,11 @@ def test_write_tool_requires_signed_approval_then_continues(monkeypatch):
     completed = agent_client.continue_agent(result["approval_token"], True)
 
     assert completed["answer"] == "Investigation saved as inv-123."
-    assert completed["response_id"] == "resp-write-final"
-    assert api_client.calls[1][2] == {
-        "input": [{
+    assert "conversation_token" in completed
+    assert api_client.calls[1][2]["input"][-1] == {
             "type": "mcp_approval_response",
             "approval_request_id": "write-123",
             "approve": True,
-        }],
-        "previous_response_id": "resp-write-approval",
     }
 
 
@@ -173,14 +187,11 @@ def test_write_approval_can_be_cancelled_and_cannot_be_tampered(monkeypatch):
 
     cancelled = agent_client.continue_agent(result["approval_token"], False)
     assert cancelled["approval_cancelled"] is True
-    assert cancelled["response_id"] == "resp-cancelled"
-    assert api_client.calls[1][2] == {
-        "input": [{
+    assert "conversation_token" in cancelled
+    assert api_client.calls[1][2]["input"][-1] == {
             "type": "mcp_approval_response",
             "approval_request_id": "write-123",
             "approve": False,
-        }],
-        "previous_response_id": "resp-write-approval",
     }
     tampered = result["approval_token"][:-2] + "AA"
     try:

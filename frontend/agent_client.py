@@ -23,6 +23,7 @@ READ_ONLY_TOOLS = {
 }
 MAX_APPROVAL_ROUNDS = 10
 APPROVAL_TTL_SECONDS = 15 * 60
+CONVERSATION_TTL_SECONDS = 8 * 60 * 60
 
 
 def _approval_requests(response: dict[str, Any]) -> list[dict[str, Any]]:
@@ -78,13 +79,13 @@ def _signing_key() -> bytes:
     return key.encode("utf-8")
 
 
-def _encode_approval(context: dict[str, Any]) -> str:
+def _encode_context(context: dict[str, Any]) -> str:
     payload = json.dumps(context, separators=(",", ":"), sort_keys=True).encode("utf-8")
     signature = hmac.new(_signing_key(), payload, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(signature + payload).decode("ascii")
 
 
-def _decode_approval(token: str) -> dict[str, Any]:
+def _decode_context(token: str, ttl_seconds: int, error_message: str) -> dict[str, Any]:
     try:
         signed = base64.b64decode(str(token), altchars=b"-_", validate=True)
         signature, payload = signed[:32], signed[32:]
@@ -93,27 +94,45 @@ def _decode_approval(token: str) -> dict[str, Any]:
             raise ValueError
         context = json.loads(payload)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise ValueError("The write approval is invalid. Start the investigation again.") from exc
+        raise ValueError(error_message) from exc
     issued_at = context.get("issued_at")
-    if not isinstance(issued_at, int) or not 0 <= time.time() - issued_at <= APPROVAL_TTL_SECONDS:
-        raise ValueError("The write approval expired. Start the investigation again.")
-    if not isinstance(context.get("response_id"), str) or not isinstance(context.get("approvals"), list):
+    if not isinstance(issued_at, int) or not 0 <= time.time() - issued_at <= ttl_seconds:
+        raise ValueError(error_message)
+    return context
+
+
+def _encode_approval(context: dict[str, Any]) -> str:
+    return _encode_context(context)
+
+
+def _decode_approval(token: str) -> dict[str, Any]:
+    context = _decode_context(
+        token,
+        APPROVAL_TTL_SECONDS,
+        "The write approval is invalid or expired. Start the investigation again.",
+    )
+    if not isinstance(context.get("history"), list) or not isinstance(context.get("approvals"), list):
         raise ValueError("The write approval is invalid. Start the investigation again.")
     return context
 
 
-def _response_id(response: dict[str, Any]) -> str | None:
-    value = response.get("id")
-    return value if isinstance(value, str) and value.strip() else None
+def _encode_conversation(endpoint: str, history: list[dict[str, Any]]) -> str:
+    return _encode_context({
+        "issued_at": int(time.time()),
+        "endpoint": endpoint,
+        "history": history,
+    })
 
 
-def _normalize_previous_response_id(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    if not normalized or len(normalized) > 256 or any(character.isspace() for character in normalized):
-        raise ValueError("previous_response_id is invalid. Start a new conversation.")
-    return normalized
+def _decode_conversation(token: str, endpoint: str) -> list[dict[str, Any]]:
+    context = _decode_context(
+        token,
+        CONVERSATION_TTL_SECONDS,
+        "The conversation expired or is invalid. Start a new conversation.",
+    )
+    if context.get("endpoint") != endpoint or not isinstance(context.get("history"), list):
+        raise ValueError("The conversation is invalid. Start a new conversation.")
+    return context["history"]
 
 
 def _approval_response(request_id: str, approve: bool) -> dict[str, Any]:
@@ -124,7 +143,7 @@ def _approval_response(request_id: str, approve: bool) -> dict[str, Any]:
     }
 
 
-def _approval_result(endpoint: str, response_id: str,
+def _approval_result(endpoint: str, history: list[dict[str, Any]],
                      approvals: list[dict[str, Any]],
                      policy_approved: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     proposed = [
@@ -139,7 +158,7 @@ def _approval_result(endpoint: str, response_id: str,
     token = _encode_approval({
         "issued_at": int(time.time()),
         "endpoint": endpoint,
-        "response_id": response_id,
+        "history": history,
         "approvals": [
             *(
                 {
@@ -160,57 +179,59 @@ def _approval_result(endpoint: str, response_id: str,
     }
 
 
-def _run_agent(endpoint: str, input_items: list[dict[str, Any]],
-               previous_response_id: str | None = None) -> dict[str, Any]:
+def _run_agent(endpoint: str, history: list[dict[str, Any]]) -> dict[str, Any]:
     client = WorkspaceClient()
     path = f"/serving-endpoints/{endpoint}/invocations"
     response: Any = None
     for _ in range(MAX_APPROVAL_ROUNDS):
-        body: dict[str, Any] = {"input": input_items}
-        if previous_response_id:
-            body["previous_response_id"] = previous_response_id
-        response = client.api_client.do("POST", path, body=body)
+        # Pass a new list to the SDK. The local history is extended after the
+        # response returns; sharing the same list with the request body can
+        # retroactively mutate recorded/retried request payloads.
+        response = client.api_client.do("POST", path, body={"input": list(history)})
         if not isinstance(response, dict):
-            return {"answer": str(response), "raw": response}
-        response_id = _response_id(response)
+            return {
+                "answer": str(response),
+                "raw": response,
+                "conversation_token": _encode_conversation(endpoint, history),
+            }
         approvals = _approval_requests(response)
         if not approvals:
             break
+        output = response.get("output") or []
+        history.extend(item for item in output if isinstance(item, dict))
         protected = [request for request in approvals if request.get("name") not in READ_ONLY_TOOLS]
         read_only = [request for request in approvals if request.get("name") in READ_ONLY_TOOLS]
         if protected:
-            if not response_id:
-                raise RuntimeError("The Agent endpoint omitted the response ID required for write approval.")
             # If the model requested read and write tools together, carry the
             # policy-approved read requests in the signed continuation as well.
-            return _approval_result(endpoint, response_id, protected, read_only)
-        if not response_id:
-            raise RuntimeError("The Agent endpoint omitted the response ID required for tool approval.")
-        input_items = [_approval_response(request["id"], True) for request in read_only]
-        previous_response_id = response_id
+            return _approval_result(endpoint, history, protected, read_only)
+        history.extend(_approval_response(request["id"], True) for request in read_only)
     else:
         raise RuntimeError("The agent exceeded the maximum number of MCP approval rounds.")
 
     answer = _extract_answer(response)
-    result = {"answer": answer or "The agent returned no displayable answer.", "raw": response}
-    response_id = _response_id(response)
-    if response_id:
-        result["response_id"] = response_id
-    return result
+    output = response.get("output") if isinstance(response, dict) else None
+    if isinstance(output, list):
+        history.extend(item for item in output if isinstance(item, dict))
+    elif answer:
+        history.append({"role": "assistant", "content": answer})
+    return {
+        "answer": answer or "The agent returned no displayable answer.",
+        "raw": response,
+        "conversation_token": _encode_conversation(endpoint, history),
+    }
 
 
-def ask_agent(message: str, previous_response_id: str | None = None) -> dict[str, Any]:
+def ask_agent(message: str, conversation_token: str | None = None) -> dict[str, Any]:
     endpoint = os.getenv("AGENT_ENDPOINT")
     if not endpoint:
         raise RuntimeError("AGENT_ENDPOINT is not configured from the finance-agent App resource.")
     prompt = " ".join(str(message or "").split())
     if not prompt or len(prompt) > 8000:
         raise ValueError("Question must be between 1 and 8000 characters.")
-    return _run_agent(
-        endpoint,
-        [{"role": "user", "content": prompt}],
-        _normalize_previous_response_id(previous_response_id),
-    )
+    history = _decode_conversation(conversation_token, endpoint) if conversation_token else []
+    history.append({"role": "user", "content": prompt})
+    return _run_agent(endpoint, history)
 
 
 def continue_agent(approval_token: str, approve: bool) -> dict[str, Any]:
@@ -225,7 +246,9 @@ def continue_agent(approval_token: str, approve: bool) -> dict[str, Any]:
             raise ValueError("The write approval is invalid. Start the investigation again.")
         is_read_only = request.get("name") in READ_ONLY_TOOLS
         decisions.append(_approval_response(request_id, True if is_read_only else approve))
-    result = _run_agent(endpoint, decisions, context["response_id"])
+    history = context["history"]
+    history.extend(decisions)
+    result = _run_agent(endpoint, history)
     if not approve:
         result["approval_cancelled"] = True
     return result

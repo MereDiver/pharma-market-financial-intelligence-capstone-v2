@@ -94,7 +94,7 @@ def agent():
     try:
         result = agent_client.ask_agent(
             payload.get("message", ""),
-            payload.get("previous_response_id"),
+            payload.get("conversation_token"),
         )
         elapsed = int((time.monotonic() - started) * 1000)
         if result.get("approval_required"):

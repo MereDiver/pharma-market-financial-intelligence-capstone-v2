@@ -84,9 +84,9 @@ Read tools: `get_market_overview`, `get_product_performance`, `get_variance_driv
 
 Write tools: `save_investigation`, `add_analyst_note`, `create_follow_up_action`, `update_investigation_status`, and `update_follow_up_action`.
 
-The frontend preserves each browser tab's Agent conversation through Responses API
-`previous_response_id` chaining, automatically approves read-only MCP calls, and
-requires a signed, expiring approval card before any protected write proceeds.
+The frontend preserves each browser tab's Agent conversation through a signed,
+expiring history token, automatically approves read-only MCP calls, and requires a
+separate signed approval card before any protected write proceeds.
 
 ## Lakebase CDF analytics
 
