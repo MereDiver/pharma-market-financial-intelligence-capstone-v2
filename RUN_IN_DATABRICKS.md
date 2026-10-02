@@ -187,6 +187,29 @@ CDF creates `lb_<table_name>_history` tables. Empty tables are skipped until the
 databricks bundle run -t dev pharma_activity_analytics_refresh
 ```
 
+If an earlier pipeline attempt already created its output tables without the
+`timestampNtz` Delta feature, use a SQL warehouse to run the following for each
+table that exists, then restart the failed update:
+
+```sql
+ALTER TABLE bootcamp_students.merediver.silver_agent_activity_events
+SET TBLPROPERTIES ('delta.feature.timestampNtz' = 'supported');
+
+ALTER TABLE bootcamp_students.merediver.gold_agent_activity_daily
+SET TBLPROPERTIES ('delta.feature.timestampNtz' = 'supported');
+
+ALTER TABLE bootcamp_students.merediver.silver_workflow_changes
+SET TBLPROPERTIES ('delta.feature.timestampNtz' = 'supported');
+
+ALTER TABLE bootcamp_students.merediver.gold_workflow_changes_daily
+SET TBLPROPERTIES ('delta.feature.timestampNtz' = 'supported');
+```
+
+The pipeline declares this table feature for new deployments. The manual SQL is
+only a recovery step for output tables created before that declaration was
+added. If one statement returns `TABLE_OR_VIEW_NOT_FOUND`, skip that table; the
+next pipeline update will create it with the required property.
+
 Run `sql/cdf_verification.sql` after replacing the example catalog/schema. Verify that:
 
 - `lb_agent_activity_events_history` contains inserts.

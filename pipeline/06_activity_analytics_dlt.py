@@ -20,6 +20,7 @@ def _configured_identifier(name: str, default: str) -> str:
 
 SOURCE_CATALOG = _configured_identifier("source_catalog", "bootcamp_students")
 SOURCE_SCHEMA = _configured_identifier("source_schema", "merediver")
+TIMESTAMP_NTZ_PROPERTIES = {"delta.feature.timestampNtz": "supported"}
 
 
 def _source(table: str) -> str:
@@ -31,6 +32,7 @@ def _source(table: str) -> str:
 @dlt.table(
     name="silver_agent_activity_events",
     comment="Validated application events streamed from Lakebase Change Data Feed.",
+    table_properties=TIMESTAMP_NTZ_PROPERTIES,
 )
 @dlt.expect_or_drop("valid_change_type", "_pg_change_type IN ('insert', 'update_postimage')")
 @dlt.expect_or_drop("valid_event_type", "event_type IS NOT NULL")
@@ -60,6 +62,7 @@ def silver_agent_activity_events():
 @dlt.table(
     name="gold_agent_activity_daily",
     comment="Daily application usage, outcomes, latency, sessions, and approved writes.",
+    table_properties=TIMESTAMP_NTZ_PROPERTIES,
 )
 def gold_agent_activity_daily():
     return (
@@ -80,6 +83,7 @@ def gold_agent_activity_daily():
 @dlt.table(
     name="silver_workflow_changes",
     comment="Investigation and follow-up state changes captured from Lakebase CDF.",
+    table_properties=TIMESTAMP_NTZ_PROPERTIES,
 )
 def silver_workflow_changes():
     investigations = (
@@ -110,6 +114,7 @@ def silver_workflow_changes():
 @dlt.table(
     name="gold_workflow_changes_daily",
     comment="Daily Lakebase investigation and follow-up changes for operational analytics.",
+    table_properties=TIMESTAMP_NTZ_PROPERTIES,
 )
 def gold_workflow_changes_daily():
     return (
