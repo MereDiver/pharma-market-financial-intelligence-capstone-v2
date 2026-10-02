@@ -50,6 +50,7 @@ def silver_agent_activity_events():
             "approved_write",
             "error_type",
             "created_at",
+            "_pg_change_type",
             "_pg_lsn",
             "_pg_xid",
             "_sort_by",
