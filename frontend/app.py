@@ -92,7 +92,10 @@ def agent():
     started = time.monotonic()
     _record_activity(session_id, "agent_request", "unknown", "pending")
     try:
-        result = agent_client.ask_agent(payload.get("message", ""))
+        result = agent_client.ask_agent(
+            payload.get("message", ""),
+            payload.get("previous_response_id"),
+        )
         elapsed = int((time.monotonic() - started) * 1000)
         if result.get("approval_required"):
             _record_activity(session_id, "approval_requested", "write", "pending", latency_ms=elapsed)

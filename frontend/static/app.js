@@ -6,6 +6,8 @@ const escapeHtml=value=>{const node=document.createElement('div');node.textConte
 const newSessionId=()=>globalThis.crypto?.randomUUID?.()||'00000000-0000-4000-8000-000000000001';
 const SESSION_ID=localStorage.getItem('pharma_session_id')||newSessionId();
 localStorage.setItem('pharma_session_id',SESSION_ID);
+const RESPONSE_ID_KEY=`pharma_response_id:${SESSION_ID}`;
+let previousResponseId=sessionStorage.getItem(RESPONSE_ID_KEY)||null;
 
 function renderMarkdown(value){
   const inline=text=>escapeHtml(text)
@@ -69,6 +71,10 @@ function approvalArguments(value){
 }
 function renderAgentResult(data){
   const conversation=$('conversation');
+  if(data.response_id){
+    previousResponseId=data.response_id;
+    sessionStorage.setItem(RESPONSE_ID_KEY,previousResponseId);
+  }
   if(data.approval_required){
     pendingApprovalToken=data.approval_token;
     const writes=(data.proposed_writes||[]).map(write=>`<div class="approval-tool"><strong>${escapeHtml(write.name)}</strong><pre>${escapeHtml(approvalArguments(write.arguments))}</pre></div>`).join('');
@@ -110,8 +116,8 @@ async function loadActivity(){
   }catch(error){$('activityStatus').textContent='CDF analytics pending'}
 }
 
-async function ask(event){event.preventDefault();const input=$('question'),message=input.value.trim();if(!message)return;const conversation=$('conversation');conversation.insertAdjacentHTML('beforeend',`<div class="user-message"><div>${escapeHtml(message)}</div></div><div id="thinking" class="agent-message loading"><div class="avatar">AI</div><div>Investigating governed data and evidence…</div></div>`);conversation.scrollTop=conversation.scrollHeight;input.value='';
-  try{const data=await jsonFetch('/api/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,session_id:SESSION_ID})});$('thinking').remove();renderAgentResult(data);await loadWorkspace();await loadEvidence();await loadActivity()}catch(error){$('thinking').remove();conversation.insertAdjacentHTML('beforeend',`<div class="agent-message"><div class="avatar">!</div><div>${escapeHtml(error.message)}</div></div>`)}conversation.scrollTop=conversation.scrollHeight}
+async function ask(event){event.preventDefault();const input=$('question'),message=input.value.trim();if(!message)return;const conversation=$('conversation');if(pendingApprovalToken){conversation.insertAdjacentHTML('beforeend','<div class="agent-message"><div class="avatar">!</div><div>Approve or cancel the pending write before sending another question.</div></div>');conversation.scrollTop=conversation.scrollHeight;return}conversation.insertAdjacentHTML('beforeend',`<div class="user-message"><div>${escapeHtml(message)}</div></div><div id="thinking" class="agent-message loading"><div class="avatar">AI</div><div>Investigating governed data and evidence…</div></div>`);conversation.scrollTop=conversation.scrollHeight;input.value='';
+  try{const data=await jsonFetch('/api/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,session_id:SESSION_ID,previous_response_id:previousResponseId})});$('thinking').remove();renderAgentResult(data);await loadWorkspace();await loadEvidence();await loadActivity()}catch(error){$('thinking').remove();conversation.insertAdjacentHTML('beforeend',`<div class="agent-message"><div class="avatar">!</div><div>${escapeHtml(error.message)}</div></div>`)}conversation.scrollTop=conversation.scrollHeight}
 
 async function resolveApproval(approve,button){
   if(!pendingApprovalToken)return;
